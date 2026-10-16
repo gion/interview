@@ -2,8 +2,12 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import type { Shipment, ShipmentStatus } from '@/lib/shipments';
-import { formatCurrency, formatStatus } from '@/lib/format';
+import { SHIPMENT_STATUSES, type Shipment, type ShipmentStatus } from '@/lib/shipments';
+import { debounce } from '@/lib/debounce';
+import { markDelivered } from '@/app/actions';
+import ShipmentRow from './ShipmentRow';
+
+const SEARCH_DEBOUNCE_MS = 3000;
 
 interface Props {
   items: Shipment[];
@@ -11,13 +15,15 @@ interface Props {
   page: number;
   pageSize: number;
   status: ShipmentStatus | 'all';
+  search: string;
 }
 
-export default function ShipmentsTable({ items, total, page, pageSize, status }: Props) {
+export default function ShipmentsTable({ items, total, page, pageSize, status, search }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [searchInput, setSearchInput] = useState(search);
 
   const setParams = (next: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -28,6 +34,8 @@ export default function ShipmentsTable({ items, total, page, pageSize, status }:
     router.push(`${pathname}?${params.toString()}`);
   };
 
+  const debouncedSearch = debounce((value: string) => setParams({ q: value }), SEARCH_DEBOUNCE_MS);
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -36,19 +44,43 @@ export default function ShipmentsTable({ items, total, page, pageSize, status }:
       return next;
     });
 
+  const onMarkDelivered = async () => {
+    await markDelivered(Array.from(selected));
+    setSelected(new Set());
+  };
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <>
-      <label>
-        Status{' '}
-        <select value={status} onChange={(e) => setParams({ status: e.target.value, page: null })}>
-          <option value="all">All</option>
-          <option value="pending">Pending</option>
-          <option value="in_transit">In transit</option>
-          <option value="delivered">Delivered</option>
-        </select>
-      </label>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        <input
+          type="search"
+          placeholder="Search reference or customer…"
+          value={searchInput}
+          onChange={(e) => {
+            setSearchInput(e.target.value);
+            debouncedSearch(e.target.value);
+          }}
+        />
+
+        <label>
+          Status{' '}
+          <select value={status} onChange={(e) => setParams({ status: e.target.value, page: null })}>
+            {SHIPMENT_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button disabled={selected.size === 0} onClick={onMarkDelivered}>
+          Mark {selected.size} as delivered
+        </button>
+
+        <small>Last synced: {new Date().toLocaleTimeString()}</small>
+      </div>
 
       <table style={{ width: '100%', marginTop: 12 }}>
         <thead>
@@ -62,19 +94,14 @@ export default function ShipmentsTable({ items, total, page, pageSize, status }:
           </tr>
         </thead>
         <tbody>
-          {items.map((s) => (
-            <tr key={s.id}>
-              <td>
-                <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
-              </td>
-              <td>{s.reference}</td>
-              <td>{s.customer}</td>
-              <td>
-                {s.origin} → {s.destination}
-              </td>
-              <td>{formatStatus(s.status)}</td>
-              <td>{formatCurrency(s.price)}</td>
-            </tr>
+          {items.map((s, index) => (
+            <ShipmentRow
+              key={index}
+              shipment={s}
+              isSelected={selected.has(s.id)}
+              highlight={searchInput}
+              onToggle={() => toggle(s.id)}
+            />
           ))}
         </tbody>
       </table>
