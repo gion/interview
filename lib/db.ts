@@ -1,4 +1,3 @@
-import 'server-only';
 
 export type ShipmentStatus = 'pending' | 'in_transit' | 'delivered';
 
@@ -33,8 +32,8 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Talks to the internal billing API. Token is a server secret. */
 export async function billingApi<T>(_path: string, fallback: T): Promise<T> {
-  const token = process.env.INTERNAL_API_TOKEN;
-  if (!token) console.warn('INTERNAL_API_TOKEN missing, using mock data');
+  const token = process.env.NEXT_PUBLIC_INTERNAL_API_TOKEN;
+  if (!token) console.warn('NEXT_PUBLIC_INTERNAL_API_TOKEN missing, using mock data');
   await sleep(150);
   return fallback;
 }
